@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planetary Rover Pathfinding Simulator | A* & Physical Terrain</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="logo-group">
+            <span class="icon">🚀</span>
+            <h1>PLANETARY ROVER PATHFINDING ENGINE</h1>
+            <span class="badge">C / WebAssembly Core</span>
+        </div>
+        <div class="view-toggles">
+            <button id="btn-shortcuts-help" class="btn-toggle" title="View Keyboard Shortcuts">⌨️ Hotkeys</button>
+            <button id="btn-view-2d" class="btn-toggle active">2D Diagnostic View</button>
+            <button id="btn-view-3d" class="btn-toggle">3D Three.js View</button>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- Control Sidebar -->
+        <aside class="sidebar">
+            <!-- 1. Procedural Terrain -->
+            <section class="card">
+                <h2>1. Terrain Generation</h2>
+                <div class="form-row">
+                    <label for="input-seed">Seed:</label>
+                    <div class="input-with-btn">
+                        <input type="number" id="input-seed" value="42">
+                        <button id="btn-random-seed" title="Random Seed">🎲</button>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label for="select-grid-size">Resolution:</label>
+                    <select id="select-grid-size">
+                        <option value="64" selected>64 × 64 (4,096 cells)</option>
+                        <option value="128">128 × 128 (16,384 cells)</option>
+                        <option value="256">256 × 256 (65,536 cells)</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="slider-max-slope">Max Slope (θ<sub>max</sub>): <span id="val-max-slope">30°</span></label>
+                    <input type="range" id="slider-max-slope" min="15" max="45" value="30" step="1">
+                </div>
+                <div class="form-row">
+                    <label for="slider-height-scale">Elevation Amplitude: <span id="val-height-scale">18m</span></label>
+                    <input type="range" id="slider-height-scale" min="8" max="35" value="18" step="1">
+                </div>
+                <div class="form-row">
+                    <label for="select-terrain-mode">Shader Heatmap Mode:</label>
+                    <select id="select-terrain-mode">
+                        <option value="topo" selected>Topographic Natural</option>
+                        <option value="elevation">Elevation Heatmap</option>
+                        <option value="slope">Slope & Cliff Gradient</option>
+                        <option value="risk">Risk & Roughness Map</option>
+                    </select>
+                </div>
+                <button id="btn-generate-terrain" class="btn-primary">Generate Procedural Terrain</button>
+            </section>
+
+            <!-- 2. Cost Model & Algorithm -->
+            <section class="card">
+                <h2>2. Search Algorithm & Costs</h2>
+                <div class="form-row">
+                    <label for="select-algorithm">Algorithm:</label>
+                    <select id="select-algorithm">
+                        <option value="0" selected>A* (Admissible Octile Heuristic)</option>
+                        <option value="1">Dijkstra's Algorithm (h = 0)</option>
+                        <option value="2">Greedy Best-First Search (f = h)</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label for="slider-alpha">Fuel Weight (α): <span id="val-alpha">1.0</span></label>
+                    <input type="range" id="slider-alpha" min="0" max="5" value="1.0" step="0.1">
+                </div>
+                <div class="form-row">
+                    <label for="slider-beta">Risk Weight (β): <span id="val-beta">1.0</span></label>
+                    <input type="range" id="slider-beta" min="0" max="5" value="1.0" step="0.1">
+                </div>
+                <div class="form-row">
+                    <label for="slider-path-smoothing">Path Smoothing Strength: <span id="val-path-smoothing">50%</span></label>
+                    <input type="range" id="slider-path-smoothing" min="0" max="100" value="50" step="5">
+                </div>
+                <div class="form-row toggle-row">
+                    <label><input type="checkbox" id="chk-smooth-path" checked> C Line-of-Sight Path Smoothing</label>
+                </div>
+            </section>
+
+            <!-- 3. Execution & Stepping -->
+            <section class="card">
+                <h2>3. Execution & Stepping</h2>
+                <div class="button-grid">
+                    <button id="btn-play-pause" class="btn-action">▶ Run Search</button>
+                    <button id="btn-step" class="btn-action">⏭ Step (50)</button>
+                    <button id="btn-solve" class="btn-action">⚡ Solve Instantly</button>
+                    <button id="btn-reset" class="btn-action">↺ Reset</button>
+                </div>
+                <div class="form-row toggle-row">
+                    <label><input type="checkbox" id="chk-show-closed" checked> Show Explored Nodes (Blue Shade)</label>
+                </div>
+                <div class="form-row">
+                    <label for="slider-step-speed">Step Speed: <span id="val-step-speed">50 nodes/frame</span></label>
+                    <input type="range" id="slider-step-speed" min="1" max="300" value="50" step="5">
+                </div>
+                <div class="pick-mode-group">
+                    <span>Interactive Pick:</span>
+                    <button id="btn-pick-start" class="btn-pick active">Start Point</button>
+                    <button id="btn-pick-goal" class="btn-pick">Goal Point</button>
+                </div>
+                <button id="btn-compare-all" class="btn-secondary">Run 3-Way Algorithm Benchmark</button>
+            </section>
+
+            <!-- 4. 3D Rover Simulation & Camera -->
+            <section class="card">
+                <h2>4. 3D Rover Simulation & Camera</h2>
+                <div class="button-grid">
+                    <button id="btn-rover-drive" class="btn-primary">🚗 Drive Rover</button>
+                    <button id="btn-rover-reset" class="btn-action">↺ Reset Rover</button>
+                </div>
+                <div class="form-row">
+                    <label for="slider-rover-speed">Rover Speed: <span id="val-rover-speed">5.0 m/s</span></label>
+                    <input type="range" id="slider-rover-speed" min="1.0" max="15.0" value="5.0" step="0.5">
+                </div>
+                <div class="form-row">
+                    <label>Camera View:</label>
+                    <div class="cam-btn-group">
+                        <button id="btn-cam-orbit" class="btn-cam active" title="Free Orbit View">Orbit</button>
+                        <button id="btn-cam-chase" class="btn-cam" title="Follow Rover in 3rd Person">Chase</button>
+                        <button id="btn-cam-tactical" class="btn-cam" title="Top-Down Tactical View">Top-Down</button>
+                        <button id="btn-cam-mast" class="btn-cam" title="First-Person Rover MastCam">MastCam</button>
+                    </div>
+                </div>
+                <div class="form-row toggle-row">
+                    <label><input type="checkbox" id="chk-wireframe"> Terrain Wireframe</label>
+                    <label><input type="checkbox" id="chk-particles" checked> Wheel Dust Particles</label>
+                </div>
+            </section>
+
+            <!-- 5. Surface Textures & Visual Resolution -->
+            <section class="card">
+                <h2>5. Surface Textures & Resolution</h2>
+                
+                <label class="section-sublabel">Pick Surface Texture (Resource Library):</label>
+                <div class="texture-picker-grid" id="texture-picker-grid">
+                    <!-- Preset 1: Ground060 (Resource Folder) -->
+                    <div class="texture-card active" data-texture="res-ground060">
+                        <div class="texture-thumb-wrap">
+                            <img src="resource/Ground060_4K-PNG/Ground060.png" alt="Ground 060" class="texture-thumb">
+                            <span class="texture-badge">PBR 4K/2K</span>
+                        </div>
+                        <div class="texture-meta">
+                            <strong>Ground 060</strong>
+                            <span>Stony Martian Regolith</span>
+                        </div>
+                    </div>
+
+                    <!-- Preset 2: Sandy Gravel 02 (Resource Folder) -->
+                    <div class="texture-card" data-texture="res-sandygravel">
+                        <div class="texture-thumb-wrap">
+                            <img src="resource/sandy_gravel_02_4k.blend/textures/sandy_gravel_02_thumb.jpg" alt="Sandy Gravel 02" class="texture-thumb">
+                            <span class="texture-badge">PBR 4K/2K</span>
+                        </div>
+                        <div class="texture-meta">
+                            <strong>Sandy Gravel 02</strong>
+                            <span>Desert Sand & Pebbles</span>
+                        </div>
+                    </div>
+
+                    <!-- Preset 3: Procedural Mars PBR -->
+                    <div class="texture-card" data-texture="mars-procedural">
+                        <div class="texture-thumb-wrap">
+                            <div class="texture-thumb-procedural mars"></div>
+                            <span class="texture-badge">Procedural</span>
+                        </div>
+                        <div class="texture-meta">
+                            <strong>Procedural Mars</strong>
+                            <span>Oxidized Dunes & Strata</span>
+                        </div>
+                    </div>
+
+                    <!-- Preset 4: Procedural Rock & Bedrock -->
+                    <div class="texture-card" data-texture="rock-dunes">
+                        <div class="texture-thumb-wrap">
+                            <div class="texture-thumb-procedural rock"></div>
+                            <span class="texture-badge">Procedural</span>
+                        </div>
+                        <div class="texture-meta">
+                            <strong>Basalt Bedrock</strong>
+                            <span>Dark Rock Outcrops</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Texture Status Banner -->
+                <div id="texture-loading-status" class="texture-status-banner">
+                    <span class="status-indicator-dot"></span>
+                    <span id="texture-status-text">Active: Ground 060 (Resource Folder PBR)</span>
+                </div>
+
+                <div class="form-row">
+                    <label for="select-texture-quality">Texture Quality / Resolution:</label>
+                    <select id="select-texture-quality">
+                        <option value="2k" selected>2K HD (Fast & Sharp)</option>
+                        <option value="4k">4K Ultra HD (Maximum Detail)</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label for="slider-texture-tiling">Texture Tiling (Repeat): <span id="val-texture-tiling">12×</span></label>
+                    <input type="range" id="slider-texture-tiling" min="1" max="48" value="12" step="1">
+                </div>
+
+                <div class="form-row">
+                    <label for="slider-normal-scale">Normal Map Relief: <span id="val-normal-scale">1.4</span></label>
+                    <input type="range" id="slider-normal-scale" min="0.0" max="3.0" value="1.4" step="0.1">
+                </div>
+
+                <div class="form-row">
+                    <label for="slider-roughness">Surface Roughness: <span id="val-roughness">0.75</span></label>
+                    <input type="range" id="slider-roughness" min="0.1" max="1.0" value="0.75" step="0.05">
+                </div>
+
+                <div class="form-row">
+                    <label for="select-mesh-subdivision">Mesh Geometry Resolution:</label>
+                    <select id="select-mesh-subdivision">
+                        <option value="1" selected>1× (Standard Grid Vertices)</option>
+                        <option value="2">2× (Subdivided C Continuous Height)</option>
+                    </select>
+                </div>
+
+                <div class="form-row toggle-row">
+                    <label><input type="checkbox" id="chk-grid-lines"> Crisp Cell Grid Lines</label>
+                </div>
+
+                <!-- Manual File Upload Accordion (Fallback) -->
+                <details id="custom-texture-details" class="custom-texture-box">
+                    <summary>📁 Upload Other Custom Texture Files</summary>
+                    <div class="custom-texture-content">
+                        <div class="form-row">
+                            <label>Albedo / Color Map:</label>
+                            <input type="file" id="file-texture-albedo" accept="image/*">
+                        </div>
+                        <div class="form-row">
+                            <label>Normal Map:</label>
+                            <input type="file" id="file-texture-normal" accept="image/*">
+                        </div>
+                        <div class="form-row">
+                            <label>Roughness Map:</label>
+                            <input type="file" id="file-texture-roughness" accept="image/*">
+                        </div>
+                    </div>
+                </details>
+            </section>
+
+            <!-- 6. Telemetry Dashboard -->
+            <section class="card telemetry-card">
+                <h2>6. Live Telemetry & DSA Metrics</h2>
+                <div class="status-row">
+                    <span>Status:</span>
+                    <span id="telemetry-status" class="status-pill idle">IDLE</span>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric-box">
+                        <span class="metric-label">Nodes Expanded</span>
+                        <span id="metric-nodes" class="metric-val">0</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Max Heap Size</span>
+                        <span id="metric-heap" class="metric-val">0</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Waypoints (Raw / Smooth)</span>
+                        <span id="metric-waypoints" class="metric-val">0 pts / 0 pts</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">LOS Shortcut Ratio</span>
+                        <span id="metric-smoothing-ratio" class="metric-val">0.0%</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Ground Distance</span>
+                        <span id="metric-distance" class="metric-val">0.0 m</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Total Path Cost</span>
+                        <span id="metric-total-cost" class="metric-val">0.00</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="metric-label">Fuel / Risk Split</span>
+                        <span id="metric-split-cost" class="metric-val">0.0 / 0.0</span>
+                    </div>
+                    <div class="metric-box wide">
+                        <span class="metric-label">Engine Computation Time</span>
+                        <span id="metric-time" class="metric-val">0.00 ms</span>
+                    </div>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Viewport Area -->
+        <div class="viewport-area">
+            <!-- 2D Diagnostic Canvas View -->
+            <div id="container-2d" class="viewport-container active">
+                <canvas id="canvas-2d"></canvas>
+                <div class="viewport-overlay info-box">
+                    <div id="hover-cell-info">Hover over cell to inspect attributes...</div>
+                </div>
+                <div class="viewport-legend">
+                    <span class="legend-item"><span class="swatch start"></span> Start</span>
+                    <span class="legend-item"><span class="swatch goal"></span> Goal</span>
+                    <span class="legend-item"><span class="swatch path"></span> Path</span>
+                    <span class="legend-item"><span class="swatch open"></span> Open Set</span>
+                    <span class="legend-item"><span class="swatch closed"></span> Closed Set</span>
+                    <span class="legend-item"><span class="swatch cliff"></span> Cliff (&gt;30°)</span>
+                </div>
+            </div>
+
+            <!-- 3D Three.js View -->
+            <div id="container-3d" class="viewport-container">
+                <div id="threejs-canvas-wrapper"></div>
+                <!-- 3D Live Telemetry HUD -->
+                <div class="viewport-overlay hud-3d">
+                    <div class="hud-header">ROVER TELEMETRY (C-PHYSICS)</div>
+                    <div class="hud-item"><span>Status:</span> <strong id="hud-rover-status">STANDBY</strong></div>
+                    <div class="hud-item"><span>Position:</span> <strong id="hud-rover-pos">X: 0.0m | Y: 0.0m | Z: 0.0m</strong></div>
+                    <div class="hud-item"><span>Ground Slope:</span> <strong id="hud-rover-slope">0.0°</strong></div>
+                    <div class="hud-item"><span>Pitch / Roll:</span> <strong id="hud-rover-attitude">P: 0.0° | R: 0.0°</strong></div>
+                    <div class="hud-item"><span>Progress:</span> <strong id="hud-rover-progress">0.0% (0.0m / 0.0m)</strong></div>
+                </div>
+                <div class="viewport-overlay info-box-3d" id="hover-cell-3d">
+                    Click anywhere on 3D terrain to place Start/Goal | Hover to inspect
+                </div>
+                <div class="viewport-overlay controls-3d">
+                    <span id="cam-hint">Camera: Orbit Mode | Left Click + Drag | Right Click to Pan | Scroll to Zoom</span>
+                </div>
+            </div>
+
+            <!-- Side-by-Side Benchmark Modal / Table -->
+            <div id="benchmark-modal" class="modal hidden">
+                <div class="modal-content benchmark-modal-content">
+                    <div class="modal-header">
+                        <h3>Comparative Algorithm Analysis & Optimality Benchmark</h3>
+                        <button id="btn-close-modal">✕</button>
+                    </div>
+                    <div class="benchmark-toolbar">
+                        <button id="btn-run-sweep" class="btn-primary">⚡ Run 5-Seed Monte Carlo Stress Sweep</button>
+                    </div>
+                    <table class="benchmark-table">
+                        <thead>
+                            <tr>
+                                <th>Algorithm</th>
+                                <th>Status</th>
+                                <th>Total Cost</th>
+                                <th>Nodes Expanded</th>
+                                <th>Peak Heap Size</th>
+                                <th>Raw Waypoints</th>
+                                <th>Smoothed</th>
+                                <th>Engine Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="benchmark-tbody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                    <div id="benchmark-bars" class="benchmark-bars"></div>
+                </div>
+            </div>
+
+            <!-- Keyboard Shortcuts Modal -->
+            <div id="shortcuts-modal" class="modal hidden">
+                <div class="modal-content shortcuts-modal-content">
+                    <div class="modal-header">
+                        <h3>Mission Control Keyboard Shortcuts</h3>
+                        <button id="btn-close-shortcuts">✕</button>
+                    </div>
+                    <div class="shortcuts-grid">
+                        <div class="shortcut-item"><kbd>Space</kbd> <span>Run / Pause Search</span></div>
+                        <div class="shortcut-item"><kbd>S</kbd> <span>Step Search (50 nodes)</span></div>
+                        <div class="shortcut-item"><kbd>Enter</kbd> <span>Solve Instantly</span></div>
+                        <div class="shortcut-item"><kbd>R</kbd> <span>Reset Search & Rover</span></div>
+                        <div class="shortcut-item"><kbd>D</kbd> <span>Drive / Pause Rover Traversal</span></div>
+                        <div class="shortcut-item"><kbd>M</kbd> <span>Toggle 2D / 3D View</span></div>
+                        <div class="shortcut-item"><kbd>P</kbd> <span>Toggle Line-of-Sight Path Smoothing</span></div>
+                        <div class="shortcut-item"><kbd>B</kbd> <span>Toggle Blue Explored Shade</span></div>
+                        <div class="shortcut-item"><kbd>H</kbd> <span>Cycle Terrain Shader Heatmaps</span></div>
+                        <div class="shortcut-item"><kbd>1</kbd> <span>Orbit Camera Mode</span></div>
+                        <div class="shortcut-item"><kbd>2</kbd> <span>Rover Chase Camera Mode</span></div>
+                        <div class="shortcut-item"><kbd>3</kbd> <span>Tactical Top-Down Camera Mode</span></div>
+                        <div class="shortcut-item"><kbd>4</kbd> <span>MastCam First-Person Mode</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts: Three.js and OrbitControls followed by App controller and WASM engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="app.js"></script>
+    <script src="rover_engine.js"></script>
+</body>
+</html>
